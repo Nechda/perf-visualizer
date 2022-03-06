@@ -12,33 +12,14 @@
 #include <iomanip>
 #include <vector>
 #include <fcntl.h>
-#include <linux/perf_event.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include "perf_structures.inl"
+#include "perf_samples.inl"
+
 #define dbg(line) std::cout << (#line) << std::endl; line
 #define named_emit(var) std::cout << #var << " = " << var << std::endl;
-
-
-/* Some structures from pref sources */
-struct perf_file_section {
-	__u64 offset;
-	__u64 size;
-};
-
-struct perf_file_attr {
-    perf_event_attr	attr;
-    perf_file_section ids;
-};
-
-struct perf_file_header {
-	__u64				magic;
-	__u64				size;
-	__u64				attr_size;
-	perf_file_section	attrs;
-	perf_file_section	data;
-	perf_file_section	event_types;
-};
 
 /* Just reading full file into memory */
 int read_full_file(const char* filename, char** out_string) {
@@ -103,69 +84,6 @@ const char* get_pref_hw_id_msg(__u32 id) {
                    "see `perf_event.h` line 45.";
     }
 }
-
-
-/* Simple config-dependent PERF_RECORD_SAMPLE reader */
-struct samped_data_t {
-    __u64 identifier = 0xFF;
-    __u64 ip = 0xFF;
-    __u32 pid = 0xFF , tid = 0xFF;
-    __u64 time = 0xFF;
-    __u64 addr = 0xFF;
-    __u64 id = 0xFF;
-    __u64 stream_id = 0xFF;
-    __u32 cpu = 0xFF, res = 0xFF;
-    __u64 period = 0xFF;
-    __u64 data_src = 0xFF;
-    
-    void read(char* data) {
-        assert(data);
-        cur_ptr = data;
-        #define read_32_if(flag, field)\
-            if((config & flag) == flag) field = read_32()
-        #define read_64_if(flag, field)\
-            if((config & flag) == flag) field = read_64()
-
-        read_64_if(PERF_SAMPLE_IDENTIFIER, identifier);
-        read_64_if(PERF_SAMPLE_IP, ip);
-        read_32_if(PERF_SAMPLE_TID, pid);
-        read_32_if(PERF_SAMPLE_TID, tid);
-        read_64_if(PERF_SAMPLE_TIME, time);
-        read_64_if(PERF_SAMPLE_ADDR, addr);
-        read_64_if(PERF_SAMPLE_ID, id);
-        read_64_if(PERF_SAMPLE_STREAM_ID, stream_id);
-        read_32_if(PERF_SAMPLE_CPU, cpu);
-        read_32_if(PERF_SAMPLE_CPU, res);
-        read_64_if(PERF_SAMPLE_PERIOD, period);
-        /* here may be another fields */
-        read_64_if(PERF_SAMPLE_DATA_SRC, data_src);
-
-        #undef read_32_if
-        #undef read_64_if
-    }
-
-    static void set_config(__u32 cfg) {
-        config = cfg;
-    } 
-
-    private:
-
-    char* cur_ptr = NULL;
-    static __u32 config;
-
-    __u32 read_32() {
-        __u32 res = *((__u32*)cur_ptr);
-        cur_ptr += sizeof(__u32);
-        return res;
-    }
-
-    __u64 read_64() {
-        __u64 res = *((__u64*)cur_ptr);
-        cur_ptr += sizeof(__u64);
-        return res;
-    }
-};
-__u32 samped_data_t::config = 0;
 
 /* Minimum info from PERF_RECORD_SAMPLE */
 struct record_info_t {
@@ -263,7 +181,6 @@ __u32 read_perf_file_attr(const perf_file_attr* pp_file_attr, const char* data, 
     return event_ranges[event_idx].b;
 }
 
-
 int main(int argc, char** argv) {
     char* data;
     int size = 0;
@@ -276,16 +193,16 @@ int main(int argc, char** argv) {
     perf_file_header* ph = (perf_file_header*)data;
     __u32 saved_id = 0;
     bool only_one_event = ph->attrs.size / ph->attr_size == 1;
-    for (__u32 i = 0; i < ph->attrs.size / ph->attr_size; i++)
+    for (size_t i = 0; i < ph->attrs.size / ph->attr_size; i++)
     {
         char* ptr = (data + ph->attrs.offset) + i * ph->attr_size;
-        saved_id = std::max(0U,read_perf_file_attr((perf_file_attr*)ptr, data, ph->attr_size));
+        saved_id = std::max(0U, read_perf_file_attr((perf_file_attr*)ptr, data, ph->attr_size));
     }
    
     std::vector<record_info_t> records;
     std::vector<mmap_info_t> mmap_records;
     char* data_ptr = data + ph->data.offset;
-    for (__u64 readed_bytes = 0; readed_bytes < ph->data.size;) {
+    for (size_t readed_bytes = 0; readed_bytes < ph->data.size;) {
         /*       Any record consist header and then info.        */
         /* From the header we need just a .size and .type fileds */
         perf_event_header* pp_event_header = (perf_event_header*)data_ptr;
@@ -306,7 +223,6 @@ int main(int argc, char** argv) {
             /* Here I use simple reader of records. */
             samped_data_t sampled_data;
             sampled_data.read((char*)(data_ptr + sizeof(perf_event_header)));
-            
             records.push_back({
                 sampled_data.pid,
                 only_one_event ? saved_id : sampled_data.id,
@@ -318,17 +234,6 @@ int main(int argc, char** argv) {
         }
         
         if (pp_event_header->type == PERF_RECORD_MMAP2) {
-            struct mmap2_data_t {
-                __u32 pid, tid;
-                __u64 addr;
-                __u64 len;
-                __u64 pgoff;
-                __u32 maj, min;
-                __u64 ino;
-                __u64 ino_gereration;
-                __u32 prot,flags;
-                char filename[1];
-            };
             mmap2_data_t* mmap_data = (mmap2_data_t*)(data_ptr + sizeof(perf_event_header));
             std::string filename(mmap_data->filename, strlen(mmap_data->filename));
             mmap_records.push_back({
@@ -341,12 +246,6 @@ int main(int argc, char** argv) {
         }
 
         if (pp_event_header->type == 79) {
-            struct time_conv {
-		        struct perf_event_header header;
-		        __u64 time_shift;
-		        __u64 time_mult;
-		        __u64 time_zero;
-	        };
 	        time_conv* tc = (time_conv*)data_ptr;
 	        std::cout << "~~~~[time conv event]~~~~" << std::endl;
 	        named_emit(tc->time_shift);
