@@ -27,7 +27,7 @@ int read_full_file(const char* filename, char** out_string) {
         return EXIT_FAILURE;
 
     FILE* input_file = fopen(filename, "rb");
-    if (!input_file ? ferror(input_file) : 0)
+    if (!!input_file ? ferror(input_file) : 1)
         return EXIT_FAILURE;
 
     fseek(input_file, 0, SEEK_END);
