@@ -11,7 +11,7 @@ struct samped_data_t {
     __u64 period = 0xFF;
     __u64 data_src = 0xFF;
     
-    void read(char* data) {
+    void read(const char* data) {
         assert(data);
         cur_ptr = data;
         #define read_32_if(flag, field)\
@@ -43,7 +43,7 @@ struct samped_data_t {
 
   private:
 
-    char* cur_ptr = NULL;
+    const char* cur_ptr = NULL;
     static __u32 config;
 
     __u32 read_32() {
