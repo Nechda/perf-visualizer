@@ -16,15 +16,16 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <vector>
+#include <type_traits>
 
-#include "perf_samples.inl"
 #include "perf_structures.inl"
+#include "perf_samples.inl"
 
 #define named_emit(var) std::cout << #var << " = " << var << std::endl;
 
 struct Pointer {
 public:
-  template <typename T> Pointer(T ptr) : raw_ptr(ptr) {}
+  template <typename T> Pointer(T ptr) : raw_ptr((void *)(ptr)) {}
   char *AsByte() const && { return (char *)raw_ptr; }
   template <typename T> T *As() const && { return (T *)raw_ptr; }
 
@@ -90,24 +91,24 @@ const char *get_pref_hw_id_msg(size_t id) {
 
 /* Minimum info from PERF_RECORD_SAMPLE */
 struct record_info_t {
-  __u32 pid;
-  __u64 action_id;
-  __u64 ip;
-  __u64 addr;
-  __u64 time;
-  __u64 data_src;
+  ui32 pid;
+  ui64 action_id;
+  ui64 ip;
+  ui64 addr;
+  ui64 time;
+  ui64 data_src;
 };
 
 struct mmap_info_t {
-  __u32 pid;
-  __u64 addr;
-  __u64 len;
-  __u64 pgoff;
+  ui32 pid;
+  ui64 addr;
+  ui64 len;
+  ui64 pgoff;
   std::string filename;
 };
 
 /* Writing record's info to the file, filtered by `perf_hw_id` */
-void write_event_in_file(const std::string filename, size_t event_type,
+void write_event_in_file(const std::string &filename, size_t event_type,
                          const std::vector<record_info_t> &records,
                          const std::vector<mmap_info_t> &mmap_records) {
   std::ofstream out_file;
@@ -119,7 +120,7 @@ void write_event_in_file(const std::string filename, size_t event_type,
              << " " << it.filename << std::endl;
   }
 
-  __u64 start_time = records[0].time;
+  auto start_time = records[0].time;
   for (const auto &it : records) {
     if (event_ranges[event_type].in(it.action_id))
       out_file << "r\n"
@@ -145,19 +146,12 @@ size_t read_perf_file_attr(const perf_file_attr *pp_file_attr, const char *data,
   size_t event_idx = 0;
   if (pp_event_attr->type == PERF_TYPE_HW_CACHE) {
     /* See man for good undestanding */
-    std::cout << std::endl << "=====[PERF_TYPE_HW_CACHE]=====";
-    std::cout << std::endl << "Need addition information about .config field:";
-    std::cout << std::endl
-              << "          perf_hw_cache_id = "
-              << (pp_event_attr->config & 0xFF);
-    std::cout << std::endl
-              << "       perf_hw_cache_op_id = "
-              << ((pp_event_attr->config >> 8) & 0xFF);
-    std::cout << std::endl
-              << "perf_hw_cache_op_result_id = "
-              << ((pp_event_attr->config >> 16) & 0xFF);
-    std::cout << std::endl << "==============================";
-    std::cout << std::endl;
+    std::cout << "=====[PERF_TYPE_HW_CACHE]=====\n"
+              << "Need addition information about .config field:\n"
+              << "          perf_hw_cache_id = " << (pp_event_attr->config & 0xFF) << '\n'
+              << "       perf_hw_cache_op_id = " << ((pp_event_attr->config >> 8) & 0xFF) << '\n'
+              << "perf_hw_cache_op_result_id = " << ((pp_event_attr->config >> 16) & 0xFF) << '\n'
+              << "==============================" << std::endl;
 #define gen_CACHE_MISS_flag(ch)                                                \
   ((PERF_COUNT_HW_CACHE_RESULT_MISS << 16) |                                   \
    (PERF_COUNT_HW_CACHE_OP_READ << 8) | (ch))
@@ -172,24 +166,19 @@ size_t read_perf_file_attr(const perf_file_attr *pp_file_attr, const char *data,
     /* If our event is PERF_TYPE_HARDWARE, so the .config field tells us */
     /* what harwdare event id describes this perf_event_attr structure.  */
     /* For more inf see `enum perf_hw_id` in `perf_event.h : line 45`    */
-    std::cout << std::endl << "=====[PERF_TYPE_HARDWARE]=====";
-    std::cout << std::endl << "==============================";
-    std::cout << std::endl;
+    std::cout << "=====[PERF_TYPE_HARDWARE]=====\n";
+    std::cout << "==============================\n";
     event_idx = pp_event_attr->config;
   }
-  /* Now we are interested in reading ids of events, that we will get from
-   * records. */
-  /* So it means, that there is a field .id in records (see samped_data_t), and
-   * for */
-  /* associating this id to your event list you should read id list. */
+  /* Now we are interested in reading ids of events, that we will get from records. */
+  /*   So it means, that there is a field .id in records (see samped_data_t), and   */
+  /*      for associating this id to your event list you should read id list.       */
 
-  /* According to my observation list of ids is a range of numbers, so I decided
-   */
-  /* just save only the first and the last item from this list. */
-  auto ids_raw = Pointer(pp_file_attr).AsByte() + actual_struct_size -
-                 sizeof(perf_file_section);
+  /* According to my observation list of ids is a range of numbers, so I decided */
+  /*        just save only the first and the last item from this list.           */
+  auto ids_raw = Pointer(pp_file_attr).AsByte() + actual_struct_size - sizeof(perf_file_section);
   auto ids = Pointer(ids_raw).As<perf_file_section>();
-  auto p_ids = Pointer(data + ids->offset).As<__u64>();
+  auto p_ids = Pointer(data + ids->offset).As<ui64>();
 
   auto start = *p_ids;
   p_ids += ids->size / sizeof(*p_ids) - 1;
@@ -211,8 +200,7 @@ int main(int argc, char **argv) {
   size_t saved_id = 0;
   bool only_one_event = ph->attrs.size / ph->attr_size == 1;
   for (size_t i = 0; i < ph->attrs.size / ph->attr_size; i++) {
-    auto ptr = Pointer((data + ph->attrs.offset) + i * ph->attr_size)
-                   .As<perf_file_attr>();
+    auto ptr = Pointer((data + ph->attrs.offset) + i * ph->attr_size).As<perf_file_attr>();
     saved_id = read_perf_file_attr(ptr, data, ph->attr_size);
   }
 
@@ -224,14 +212,10 @@ int main(int argc, char **argv) {
     /* From the header we need just a .size and .type fileds */
     auto pp_event_header = Pointer(data_ptr).As<perf_event_header>();
 
-    /*       There is a problem here related to undescribed in `perf_event.h`
-     * record's type.      */
-    /*   In the first time you can get invalid type of record (grather or equal
-     * PERF_RECORD_MAX)  */
-    /*  Don`t panic, you can check the correctness of your parsing. Just use
-     * perf report -D, this */
-    /*      command can show you all infomation about records that have beed
-     * written by perf.     */
+    /*       There is a problem here related to undescribed in `perf_event.h` record's type.      */
+    /*   In the first time you can get invalid type of record (grather or equal PERF_RECORD_MAX)  */
+    /*  Don`t panic, you can check the correctness of your parsing. Just use perf report -D, this */
+    /*      command can show you all infomation about records that have beedwritten by perf.      */
     if (!(pp_event_header->size < 512 && pp_event_header->type < 100)) {
       std::cout << "bad size = " << pp_event_header->size << std::endl;
       std::cout << "bad type = " << pp_event_header->type << std::endl;
@@ -251,8 +235,7 @@ int main(int argc, char **argv) {
     }
 
     if (pp_event_header->type == PERF_RECORD_MMAP2) {
-      auto mmap_data =
-          Pointer(data_ptr + sizeof(perf_event_header)).As<mmap2_data_t>();
+      auto mmap_data = Pointer(data_ptr + sizeof(perf_event_header)).As<mmap2_data_t>();
       std::string filename(mmap_data->filename, strlen(mmap_data->filename));
       mmap_records.push_back({mmap_data->pid, mmap_data->addr, mmap_data->len,
                               mmap_data->pgoff, filename});
@@ -273,37 +256,31 @@ int main(int argc, char **argv) {
 
   /* Now calculate how many events of each type we have. */
   unsigned n_records[PERF_COUNT_HW_EXTENTION_MAX] = {};
-  __u64 min_time = -1;
-  __u64 max_time = 0;
+  ui64 min_time = -1;
+  ui64 max_time = 0;
   for (const auto &it : records) {
     min_time = std::min(min_time, it.time);
     max_time = std::max(max_time, it.time);
-    for (int i = PERF_COUNT_HW_CPU_CYCLES; PERF_COUNT_HW_EXTENTION_MAX != i;
-         i++)
+    for (int i = PERF_COUNT_HW_CPU_CYCLES; PERF_COUNT_HW_EXTENTION_MAX != i; i++)
       n_records[i] += event_ranges[i].in(it.action_id);
   }
 
-  std::cout << "Total time duration: " << (max_time - min_time) / 1000000
-            << " ms" << std::endl;
+  std::cout << "Total time duration: " << (max_time - min_time) / 1000000 << " ms" << std::endl;
 
   /* And print info. */
   std::cout << "Events distribution:" << std::endl;
   for (int i = PERF_COUNT_HW_CPU_CYCLES; PERF_COUNT_HW_EXTENTION_MAX != i; i++)
     if (n_records[i])
-      std::cout << std::setw(40) << get_pref_hw_id_msg(i) << " = "
-                << n_records[i] << std::endl;
+      std::cout << std::setw(40) << get_pref_hw_id_msg(i) << " = " << n_records[i] << std::endl;
   std::cout << "Total records = " << records.size() << std::endl;
 
   /* Also write info into files. */
   if (n_records[PERF_COUNT_HW_CPU_CYCLES])
-    write_event_in_file("data_inst.txt", PERF_COUNT_HW_CPU_CYCLES, records,
-                        mmap_records);
+    write_event_in_file("data_inst.txt", PERF_COUNT_HW_CPU_CYCLES, records, mmap_records);
   if (n_records[PERF_COUNT_HW_CACHE_L1I_READ_MISSES])
-    write_event_in_file("data_icache.txt", PERF_COUNT_HW_CACHE_L1I_READ_MISSES,
-                        records, mmap_records);
+    write_event_in_file("data_icache.txt", PERF_COUNT_HW_CACHE_L1I_READ_MISSES, records, mmap_records);
   if (n_records[PERF_COUNT_HW_CACHE_ITLB_READ_MISSES])
-    write_event_in_file("data_itlb.txt", PERF_COUNT_HW_CACHE_ITLB_READ_MISSES,
-                        records, mmap_records);
+    write_event_in_file("data_itlb.txt", PERF_COUNT_HW_CACHE_ITLB_READ_MISSES, records, mmap_records);
 
   return 0;
 }

@@ -19,3 +19,6 @@ struct perf_file_header {
 	perf_file_section	data;
 	perf_file_section	event_types;
 };
+
+typedef __u64 ui64;
+typedef __u32 ui32;
