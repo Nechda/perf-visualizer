@@ -2,7 +2,11 @@
     Run:
     perf record -e instructions:u,L1-icache-load-misses:u,iTLB-load-misses:u
    ./bnch.out
-   ./perf_parser
+   ./perf_parser && python3 plot_gen.py
+
+
+   Or:
+   ./perf_parser && python3 records.py
 */
 
 #include <bitset>
@@ -110,7 +114,8 @@ struct mmap_info_t {
 /* Writing record's info to the file, filtered by `perf_hw_id` */
 void write_event_in_file(const std::string &filename, size_t event_type,
                          const std::vector<record_info_t> &records,
-                         const std::vector<mmap_info_t> &mmap_records) {
+                         const std::vector<mmap_info_t> &mmap_records)
+{
   std::ofstream out_file;
   out_file.open(filename);
 
@@ -128,6 +133,35 @@ void write_event_in_file(const std::string &filename, size_t event_type,
                << (__u64)((it.time - start_time) / 1000000) << std::endl;
   }
   out_file.close();
+}
+
+void write_events(const std::string &filename,
+                  const std::vector<record_info_t> &records,
+                  const std::vector<mmap_info_t> &mmap_records)
+{
+  std::ofstream out_file;
+  out_file.open(filename);
+  for (const auto &it : mmap_records) {
+    out_file << "mmap "
+             << it.pid << " " << it.addr << " " << it.len << " " << it.pgoff
+             << " " << it.filename << std::endl;
+  }
+
+  auto start_time = records[0].time;
+  for (const auto &it : records) {
+    if (event_ranges[PERF_COUNT_HW_CACHE_ITLB_READ_MISSES].in(it.action_id))
+      out_file << "tlb "
+              << it.pid << " " << it.addr << " "
+              << (__u64)((it.time - start_time) / 1000000) << std::endl;
+    if (event_ranges[PERF_COUNT_HW_CACHE_L1I_READ_MISSES].in(it.action_id))
+      out_file << "cache "
+              << it.pid << " " << it.addr << " "
+              << (__u64)((it.time - start_time) / 1000000) << std::endl;
+    if (event_ranges[PERF_COUNT_HW_CPU_CYCLES].in(it.action_id))
+      out_file << "cycles "
+              << it.pid << " " << it.addr << " "
+              << (__u64)((it.time - start_time) / 1000000) << std::endl;
+  }
 }
 
 size_t read_perf_file_attr(const perf_file_attr *pp_file_attr, const char *data,
@@ -275,6 +309,8 @@ int main(int argc, char **argv) {
   std::cout << "Total records = " << records.size() << std::endl;
 
   /* Also write info into files. */
+  write_events("new_format.txt", records, mmap_records);
+
   if (n_records[PERF_COUNT_HW_CPU_CYCLES])
     write_event_in_file("data_inst.txt", PERF_COUNT_HW_CPU_CYCLES, records, mmap_records);
   if (n_records[PERF_COUNT_HW_CACHE_L1I_READ_MISSES])
