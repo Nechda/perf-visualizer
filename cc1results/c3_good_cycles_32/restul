@@ -1,0 +1,10 @@
+perf stat -r 20 -e cycles:u,iTLB-load-misses:u,cache-misses:u ~/gcc_patched/gcc-install-final/bin/g++ -w tramp3d-v4.cpp -o /dev/null
+
+ Performance counter stats for '/home/dmitry/gcc_patched/gcc-install-final/bin/g++ -w tramp3d-v4.cpp -o /dev/null' (20 runs):
+
+     30 760 775 335      cycles:u                                                      ( +-  0,08% )
+         3 805 994      iTLB-load-misses                                              ( +-  2,27% )
+       166 435 942      cache-misses:u                                                ( +-  0,19% )
+
+           7,93609 +- 0,00794 seconds time elapsed  ( +-  0,10% )
+
