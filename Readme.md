@@ -30,7 +30,8 @@ The command above generate two files `raw_plot.png` and `plog.png`.
 At the current time I'm at the process of migrating to the new intermediate text representation, and you can also generate `raw` plot
 with the command below:
 ```bash
-python3 records.py
+python3 records.py <width> <height> <regexpr>
+python3 records.py 1920 1280 '.*cc1plus.*'
 ```
 
 
