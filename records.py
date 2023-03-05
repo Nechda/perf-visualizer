@@ -2,6 +2,8 @@ from collections import defaultdict
 import operator
 import numpy as np
 from PIL import Image
+import re
+import argparse
 
 class Record:
     def __init__(self, record_type : str, pid : int, ip : int, time : int):
@@ -110,19 +112,20 @@ def filter_data(records : list[Record], mmap_table : list[MMAPRecord]):
     return records, mmap_table
 
 
-def generate_plot():
+def generate_plot(plot_width:int, plot_height:int, regexpr:str):
     records, mmap_records = read_file("new_format.txt")
     records, mmap_records = filter_data(records, mmap_records)
+    mmap_records = [r for r in mmap_records if re.match(regexpr, r.name) != None]
     records, n_pages = rewrite_with_mmap(records, mmap_records)
 
-    total_time = max(r.time for r in records)
+    total_time = min(max(r.time for r in records), 120*1000)
     print(f"Total time of measurement {total_time} [ms]; Used pages: {n_pages}")
 
     # Set size of RAW plot
-    y_cells = 1280
-    x_cells = 1920
+    y_cells = plot_height
+    x_cells = plot_width
 
-    CYCLES_CHANNEL, CACHE_CHANNEL, TLB_CHANNEL  = 0, 1, 2
+    CYCLES_CHANNEL, CACHE_CHANNEL, TLB_CHANNEL  = 2, 1, 0
     type_to_channel = {'cycles' : CYCLES_CHANNEL, 'cache' : CACHE_CHANNEL, 'tlb' : TLB_CHANNEL}
 
     # Write data into image, without any normalization
@@ -146,4 +149,9 @@ def generate_plot():
     img.save("test.png")
 
 if __name__ == '__main__':
-    generate_plot()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("width", type = int, help = "The width of generated plot")
+    parser.add_argument("height", type = int, help = "The height of generated plot")
+    parser.add_argument("regexp", type = str, help = "Regexpr for mmap records sorting")
+    args = parser.parse_args()
+    generate_plot(args.width, args.height, args.regexp)
