@@ -3,7 +3,7 @@ import operator
 
 total_time = -1
 actual_total_time = -1
-stop_time = 1000
+stop_time = 150000
 
 used_records = set()
 mmap_table = []
