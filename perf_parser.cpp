@@ -251,9 +251,8 @@ int main(int argc, char **argv) {
     /*  Don`t panic, you can check the correctness of your parsing. Just use perf report -D, this */
     /*      command can show you all infomation about records that have beedwritten by perf.      */
     if (!(pp_event_header->size < 512 && pp_event_header->type < 100)) {
-      std::cout << "bad size = " << pp_event_header->size << std::endl;
-      std::cout << "bad type = " << pp_event_header->type << std::endl;
-      break;
+      std::cerr << "bad size = " << pp_event_header->size << std::endl;
+      std::cerr << "bad type = " << pp_event_header->type << std::endl;
     }
 
     /* The iternal of record can be different, and it depends on
