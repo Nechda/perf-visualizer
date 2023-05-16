@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import re
 import argparse
+import matplotlib.pyplot as plt
 
 class Record:
     def __init__(self, record_type : str, pid : int, ip : int, time : int):
@@ -112,7 +113,7 @@ def filter_data(records : list[Record], mmap_table : list[MMAPRecord]):
     return records, mmap_table
 
 
-def generate_plot(plot_width:int, plot_height:int, regexpr:str):
+def generate_plot(plot_width:int, plot_height:int, scale:int, regexpr:str):
     records, mmap_records = read_file("new_format.txt")
     records, mmap_records = filter_data(records, mmap_records)
     mmap_records = [r for r in mmap_records if re.match(regexpr, r.name) != None]
@@ -142,16 +143,25 @@ def generate_plot(plot_width:int, plot_height:int, regexpr:str):
     data = np.log10(1 + data)
     maxes = np.amax(data, axis = (0, 1))
     data = data / maxes
-    
+
+    # Extract cycles channel
+    data = data[:,:,CYCLES_CHANNEL]
+    cm = plt.get_cmap('Blues')
+    data = cm(data)
+
+    # Resize image
+    data = np.kron(data, np.ones((scale, scale,1)))
+
     rgb_array = np.uint8(255 * data)
-    rgb_array = np.flipud(rgb_array)
+    #rgb_array = np.flipud(rgb_array)
     img = Image.fromarray(rgb_array)
-    img.save("test.png")
+    img.save("n-raw-plot.png")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("width", type = int, help = "The width of generated plot")
     parser.add_argument("height", type = int, help = "The height of generated plot")
+    parser.add_argument("scale", type = int, help = "Amount of merged pixels")
     parser.add_argument("regexp", type = str, help = "Regexpr for mmap records sorting")
     args = parser.parse_args()
-    generate_plot(args.width, args.height, args.regexp)
+    generate_plot(args.width, args.height, args.scale, args.regexp)
